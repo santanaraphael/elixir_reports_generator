@@ -2,6 +2,14 @@ defmodule GenReport do
   alias GenReport.Constants
   alias GenReport.Parser
 
+  def build(filenames) when is_list(filenames) do
+    filenames
+    |> Task.async_stream(&build/1)
+    |> Enum.reduce(report_acc(), fn {:ok, new_report}, old_report ->
+      merge_reports(new_report, old_report)
+    end)
+  end
+
   def build(filename) do
     Parser.parse_file(filename)
     |> Enum.reduce(report_acc(), fn line, report -> sum_values(line, report) end)
@@ -67,5 +75,44 @@ defmodule GenReport do
         updated_map
       )
     end)
+  end
+
+  defp merge_reports(
+         %{
+           "all_hours" => new_all_hours,
+           "hours_per_month" => new_hours_per_month,
+           "hours_per_year" => new_hours_per_year
+         },
+         %{
+           "all_hours" => old_all_hours,
+           "hours_per_month" => old_hours_per_month,
+           "hours_per_year" => old_hours_per_year
+         }
+       ) do
+    %{
+      "all_hours" => merge_maps(new_all_hours, old_all_hours),
+      "hours_per_month" => merge_maps(new_hours_per_month, old_hours_per_month),
+      "hours_per_year" => merge_maps(new_hours_per_year, old_hours_per_year)
+    }
+  end
+
+  # Got this solution on:
+  # https://stackoverflow.com/questions/38864001/elixir-how-to-deep-merge-maps
+
+  defp merge_maps(left, right) do
+    Map.merge(left, right, &deep_resolve/3)
+  end
+
+  # Key exists in both maps, and both values are maps as well.
+  # These can be merged recursively.
+  defp deep_resolve(_key, %{} = left, %{} = right) do
+    merge_maps(left, right)
+  end
+
+  # Key exists in both maps, but at least one of the values is
+  # NOT a map. We fall back to standard merge behavior, preferring
+  # the value on the right.
+  defp deep_resolve(_key, left, right) do
+    left + right
   end
 end
